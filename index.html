@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgriCollect Chefchaouen - Dashboard</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link href="https://cdn.jsdelivr.net/npm/gridjs/dist/theme/mermaid.min.css" rel="stylesheet" />
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        #map { height: 500px; width: 100%; border-radius: 1.5rem; border: 4px solid white; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); z-index: 1; }
+        .glass-card { background: white; border-radius: 1.5rem; border: 1px solid #e2e8f0; }
+        .popup-img { width: 100%; max-width: 200px; height: 130px; object-fit: cover; border-radius: 8px; margin-top: 8px; border: 1px solid #ddd; }
+        .gridjs-search-input { border-radius: 12px !important; border: 2px solid #f1f5f9 !important; width: 250px !important; }
+    </style>
+</head>
+<body class="bg-slate-50 p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto">
+        <header class="mb-8 flex flex-col md:flex-row justify-between items-center gap-4 text-center md:text-left">
+            <div>
+                <h1 class="text-3xl font-black text-slate-900 tracking-tight">AgriCollect <span class="text-green-600">Chefchaouen</span></h1>
+                <p class="text-slate-500 font-bold text-xs uppercase tracking-widest mt-1">Made by MAKRANE</p>
+            </div>
+            <button onclick="location.reload()" class="bg-green-600 text-white px-8 py-3 rounded-2xl font-bold hover:bg-green-700 transition shadow-lg active:scale-95">
+                Actualiser
+            </button>
+        </header>
+
+        <div class="grid grid-cols-1 gap-8">
+            <div id="map"></div>
+
+            <div class="glass-card p-6 shadow-xl overflow-hidden">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-lg font-black text-slate-800 tracking-tight flex items-center gap-2">
+                        <span class="w-2 h-6 bg-green-500 rounded-full"></span>
+                        Base de Données Terrain
+                    </h2>
+                    <span id="row-count" class="bg-green-100 text-green-700 text-xs font-bold px-4 py-1 rounded-full italic">Chargement...</span>
+                </div>
+                <div id="table-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gridjs/dist/gridjs.umd.js"></script>
+
+    <script>
+        // Ton URL de WebApp Google Script
+        const API_URL = "https://script.google.com/macros/s/AKfycbxKqb5_sUmBOJYW5SNJypywFQ9_Ij4hxtm7jBTwRULX1jrpf7jpeX-j1ndjgYT8137xKA/exec";
+
+        // Initialisation Carte (Vue Satellite Google)
+        const map = L.map('map').setView([35.17, -5.27], 10);
+        L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { attribution: '© Google Satellite | Makrane' }).addTo(map);
+
+        // Fonction pour afficher la photo directement
+        function getDirectImgUrl(url) {
+            if (!url) return null;
+            let id = "";
+            if (url.includes("id=")) { id = url.split("id=")[1].split("&")[0]; }
+            else if (url.includes("/d/")) { id = url.split("/d/")[1].split("/")[0]; }
+            return id ? `https://drive.google.com/uc?export=view&id=${id}` : null;
+        }
+
+        async function init() {
+            try {
+                const response = await fetch(API_URL, { method: 'GET', redirect: 'follow' });
+                const data = await response.json();
+                document.getElementById('row-count').innerText = data.length + " enregistrements";
+
+                // 1. CARTE + PHOTOS
+                data.forEach(item => {
+                    if (item.latitude && item.longitude) {
+                        const imgUrl = getDirectImgUrl(item.lienphoto);
+                        const popupHTML = `
+                            <div style="min-width:180px">
+                                <b class="text-green-700 uppercase font-bold text-sm">${item.culture || 'Culture'}</b><br>
+                                <div style="font-size:11px; color:#444; margin-top:5px">
+                                    <b>Saisi par :</b> ${item.nomcollecteur}<br>
+                                    <b>Surface :</b> ${item.superficieha} Ha<br>
+                                    <b>Date :</b> ${new Date(item.datecollecte).toLocaleDateString()}
+                                </div>
+                                ${imgUrl ? `<img src="${imgUrl}" class="popup-img" alt="Photo Terrain">` : '<p style="font-size:10px; color:#aaa; font-style:italic; margin-top:8px">Aucune photo</p>'}
+                            </div>
+                        `;
+                        L.marker([item.latitude, item.longitude]).addTo(map).bindPopup(popupHTML);
+                    }
+                });
+
+                // 2. TABLEAU + TRI CHRONO + RECHERCHE
+                new gridjs.Grid({
+                    columns: [
+                        { 
+                            name: "Date", 
+                            sort: {
+                                compare: (a, b) => {
+                                    const dateA = new Date(a.split('/').reverse().join('-'));
+                                    const dateB = new Date(b.split('/').reverse().join('-'));
+                                    return dateA > dateB ? 1 : (dateA < dateB ? -1 : 0);
+                                }
+                            }
+                        },
+                        { name: "Collecteur", sort: true },
+                        { name: "Culture", sort: true },
+                        { name: "Surface", sort: true },
+                        { name: "Notes" }
+                    ],
+                    data: data.map(i => {
+                        let d = new Date(i.timestamp);
+                        let dateStr = !isNaN(d.getTime()) ? d.toLocaleDateString('fr-FR') : i.timestamp;
+                        return [dateStr, i.nomcollecteur, i.culture, i.superficieha + " Ha", i.notes || "-"];
+                    }),
+                    search: true,
+                    pagination: { limit: 10 },
+                    sort: true,
+                    language: {
+                        'search': { 'placeholder': '🔍 Filtrer...' },
+                        'pagination': { 'previous': 'Préc.', 'next': 'Suiv.' }
+                    },
+                    style: {
+                        table: { fontSize: '13px' },
+                        th: { background: '#f8fafc', color: '#64748b' }
+                    }
+                }).render(document.getElementById("table-container"));
+
+            } catch (err) {
+                console.error(err);
+                document.getElementById('row-count').innerText = "Erreur de connexion";
+            }
+        }
+        init();
+    </script>
+</body>
+</html>
