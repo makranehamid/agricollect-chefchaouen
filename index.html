@@ -19,27 +19,19 @@
 <body class="bg-slate-50 p-4 md:p-8">
 
     <div class="max-w-7xl mx-auto">
-        <header class="mb-8 flex flex-col md:flex-row justify-between items-center gap-4 text-center md:text-left">
+        <header class="mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
             <div>
                 <h1 class="text-3xl font-black text-slate-900 tracking-tight">AgriCollect <span class="text-green-600">Chefchaouen</span></h1>
                 <p class="text-slate-500 font-bold text-xs uppercase tracking-widest mt-1">Made by MAKRANE</p>
             </div>
-            <button onclick="location.reload()" class="bg-green-600 text-white px-8 py-3 rounded-2xl font-bold hover:bg-green-700 transition shadow-lg active:scale-95">
+            <button onclick="location.reload()" class="bg-green-600 text-white px-8 py-3 rounded-2xl font-bold hover:bg-green-700 transition shadow-lg">
                 Actualiser
             </button>
         </header>
 
         <div class="grid grid-cols-1 gap-8">
             <div id="map"></div>
-
             <div class="glass-card p-6 shadow-xl overflow-hidden">
-                <div class="flex items-center justify-between mb-6">
-                    <h2 class="text-lg font-black text-slate-800 tracking-tight flex items-center gap-2">
-                        <span class="w-2 h-6 bg-green-500 rounded-full"></span>
-                        Base de Données Terrain
-                    </h2>
-                    <span id="row-count" class="bg-green-100 text-green-700 text-xs font-bold px-4 py-1 rounded-full italic">Chargement...</span>
-                </div>
                 <div id="table-container"></div>
             </div>
         </div>
@@ -49,107 +41,78 @@
     <script src="https://cdn.jsdelivr.net/npm/gridjs/dist/gridjs.umd.js"></script>
 
     <script>
-        // Ton URL de WebApp Google Script
         const API_URL = "https://script.google.com/macros/s/AKfycbxKqb5_sUmBOJYW5SNJypywFQ9_Ij4hxtm7jBTwRULX1jrpf7jpeX-j1ndjgYT8137xKA/exec";
 
-        // Initialisation Carte (Vue Satellite Google)
         const map = L.map('map').setView([35.17, -5.27], 10);
-        L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { attribution: '© Google Satellite | Makrane' }).addTo(map);
+        L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}').addTo(map);
 
-        // Fonction pour afficher la photo directement
+        // --- CORRECTION PHOTO ---
         function getDirectImgUrl(url) {
-    if (!url || typeof url !== 'string') return null;
-    let id = "";
-    // On extrait l'ID de la photo peu importe le format du lien envoyé par l'APK
-    if (url.includes("id=")) { 
-        id = url.split("id=")[1].split("&")[0]; 
-    } else if (url.includes("/d/")) { 
-        id = url.split("/d/")[1].split("/")[0]; 
-    }
-    
-    // On utilise le lien de rendu direct pour les sites web
-    return id ? `https://drive.google.com/uc?export=view&id=${id}` : null;
-}
+            if (!url || url === "" || url === "undefined") return null;
+            let id = "";
+            if (url.includes("id=")) { id = url.split("id=")[1].split("&")[0]; }
+            else if (url.includes("/d/")) { id = url.split("/d/")[1].split("/")[0]; }
+            // Utilisation du lien de téléchargement direct forcé
+            return id ? "https://drive.google.com/uc?export=download&id=" + id : null;
+        }
 
         async function init() {
             try {
                 const response = await fetch(API_URL, { method: 'GET', redirect: 'follow' });
                 const data = await response.json();
-                document.getElementById('row-count').innerText = data.length + " enregistrements";
 
-                // 1. CARTE + PHOTOS
                 data.forEach(item => {
                     if (item.latitude && item.longitude) {
                         const imgUrl = getDirectImgUrl(item.lienphoto);
-                        const popupHTML = `
-                            <div style="min-width:180px">
-                                <b class="text-green-700 uppercase font-bold text-sm">${item.culture || 'Culture'}</b><br>
-                                <div style="font-size:11px; color:#444; margin-top:5px">
-                                    <b>Saisi par :</b> ${item.nomcollecteur}<br>
-                                    <b>Surface :</b> ${item.superficieha} Ha<br>
-                                    <b>Date :</b> ${new Date(item.datecollecte).toLocaleDateString()}
-                                </div>
-                                ${imgUrl ? `<img src="${imgUrl}" class="popup-img" alt="Photo Terrain">` : '<p style="font-size:10px; color:#aaa; font-style:italic; margin-top:8px">Aucune photo</p>'}
-                            </div>
-                        `;
+                        
+                        // --- CORRECTION DATE DANS POPUP ---
+                        let d = new Date(item.timestamp);
+                        let datePopup = !isNaN(d.getTime()) ? d.toLocaleDateString('fr-FR') : item.timestamp;
+
+                        let popupHTML = `
+                            <div style="min-width:160px">
+                                <b style="color:#16a34a">${item.culture || 'Culture'}</b><br>
+                                <small>Le ${datePopup} par ${item.nomcollecteur}</small><br>
+                                ${imgUrl ? `<img src="${imgUrl}" class="popup-img" onerror="this.src='https://placehold.co/200x130?text=Photo+Privee'">` : ''}
+                            </div>`;
                         L.marker([item.latitude, item.longitude]).addTo(map).bindPopup(popupHTML);
                     }
                 });
 
-                // 2. TABLEAU + TRI CHRONO + RECHERCHE
+                // --- CORRECTION TABLEAU + DATES ---
                 new gridjs.Grid({
                     columns: [
                         { 
                             name: "Date", 
                             sort: {
                                 compare: (a, b) => {
-                                    const dateA = new Date(a.split('/').reverse().join('-'));
-                                    const dateB = new Date(b.split('/').reverse().join('-'));
-                                    return dateA > dateB ? 1 : (dateA < dateB ? -1 : 0);
+                                    const parse = (s) => new Date(s.split('/').reverse().join('-'));
+                                    return parse(a) - parse(b);
                                 }
                             }
                         },
-                        { name: "Collecteur", sort: true },
-                        { name: "Culture", sort: true },
-                        { name: "Surface", sort: true },
-                        { name: "Notes" }
+                        "Collecteur", "Culture", "Surface", "Notes"
                     ],
-// Remplacez la section data.map dans Grid.js
-data: data.map(i => {
-    // On essaie de lire la date du timestamp ou de la colonne date
-    let rawDate = i.timestamp || i.datecollecte;
-    let d = new Date(rawDate);
-    
-    // Si la date est invalide, on affiche le texte brut au lieu de "Invalid Date"
-    let dateStr = !isNaN(d.getTime()) 
-        ? d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) 
-        : (rawDate || "Non spécifiée");
-
-    return [
-        dateStr, 
-        i.nomcollecteur, 
-        i.culture, 
-        i.superficieha + " Ha", 
-        i.notes || "-"
-    ];
-}),
+                    data: data.map(i => {
+                        let d = new Date(i.timestamp);
+                        // Si la date JS échoue, on prend le texte brut
+                        let dateFinal = !isNaN(d.getTime()) ? d.toLocaleDateString('fr-FR') : (i.timestamp || "—");
+                        
+                        return [
+                            dateFinal, 
+                            i.nomcollecteur || "—", 
+                            i.culture || "—", 
+                            (i.superficieha || "0") + " Ha", 
+                            i.notes || "—"
+                        ];
+                    }),
                     search: true,
                     pagination: { limit: 10 },
                     sort: true,
-                    language: {
-                        'search': { 'placeholder': '🔍 Filtrer...' },
-                        'pagination': { 'previous': 'Préc.', 'next': 'Suiv.' }
-                    },
-                    style: {
-                        table: { fontSize: '13px' },
-                        th: { background: '#f8fafc', color: '#64748b' }
-                    }
+                    style: { table: { fontSize: '13px' } }
                 }).render(document.getElementById("table-container"));
 
-            } catch (err) {
-                console.error(err);
-                document.getElementById('row-count').innerText = "Erreur de connexion";
-            }
+            } catch (err) { console.error(err); }
         }
         init();
     </script>
