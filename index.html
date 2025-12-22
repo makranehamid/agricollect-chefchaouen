@@ -58,12 +58,18 @@
 
         // Fonction pour afficher la photo directement
         function getDirectImgUrl(url) {
-            if (!url) return null;
-            let id = "";
-            if (url.includes("id=")) { id = url.split("id=")[1].split("&")[0]; }
-            else if (url.includes("/d/")) { id = url.split("/d/")[1].split("/")[0]; }
-            return id ? `https://drive.google.com/uc?export=view&id=${id}` : null;
-        }
+    if (!url || typeof url !== 'string') return null;
+    let id = "";
+    // On extrait l'ID de la photo peu importe le format du lien envoyé par l'APK
+    if (url.includes("id=")) { 
+        id = url.split("id=")[1].split("&")[0]; 
+    } else if (url.includes("/d/")) { 
+        id = url.split("/d/")[1].split("/")[0]; 
+    }
+    
+    // On utilise le lien de rendu direct pour les sites web
+    return id ? `https://drive.google.com/uc?export=view&id=${id}` : null;
+}
 
         async function init() {
             try {
@@ -108,11 +114,25 @@
                         { name: "Surface", sort: true },
                         { name: "Notes" }
                     ],
-                    data: data.map(i => {
-                        let d = new Date(i.timestamp);
-                        let dateStr = !isNaN(d.getTime()) ? d.toLocaleDateString('fr-FR') : i.timestamp;
-                        return [dateStr, i.nomcollecteur, i.culture, i.superficieha + " Ha", i.notes || "-"];
-                    }),
+// Remplacez la section data.map dans Grid.js
+data: data.map(i => {
+    // On essaie de lire la date du timestamp ou de la colonne date
+    let rawDate = i.timestamp || i.datecollecte;
+    let d = new Date(rawDate);
+    
+    // Si la date est invalide, on affiche le texte brut au lieu de "Invalid Date"
+    let dateStr = !isNaN(d.getTime()) 
+        ? d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) 
+        : (rawDate || "Non spécifiée");
+
+    return [
+        dateStr, 
+        i.nomcollecteur, 
+        i.culture, 
+        i.superficieha + " Ha", 
+        i.notes || "-"
+    ];
+}),
                     search: true,
                     pagination: { limit: 10 },
                     sort: true,
